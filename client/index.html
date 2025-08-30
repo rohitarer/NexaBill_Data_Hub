@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NexaBill Data Hub</title>
+<link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+<nav>
+<div class="logo">NexaBill Data Hub</div>
+<ul>
+<li><a href="index.html">Add Product</a></li>
+<li><a href="products.html">View Products</a></li>
+</ul>
+</nav>
+
+
+<main class="upload-container">
+<h1>Upload Product</h1>
+<form id="productForm" enctype="multipart/form-data">
+<div class="form-row">
+<input type="text" name="name" placeholder="Product Name" required />
+<input type="text" name="brand" placeholder="Brand" required />
+</div>
+<div class="form-row">
+<input type="number" name="mrp" placeholder="MRP (₹)" step="0.01" required />
+<input type="text" name="weight" placeholder="Weight/Volume" required />
+</div>
+<div class="form-row">
+<input type="text" name="flavor" placeholder="Flavor/Variant" />
+<input type="number" name="gst" placeholder="GST (%)" step="0.01" required />
+</div>
+<input type="file" name="image" accept="image/*" required />
+<button type="submit">Upload Product</button>
+</form>
+</main>
+
+
+<script src="js/main.js"></script>
+</body>
+</html>
