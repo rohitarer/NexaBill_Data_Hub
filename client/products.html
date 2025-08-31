@@ -1,53 +1,315 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Product List</title>
-<link rel="stylesheet" href="css/styles.css" />
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Product List</title>
+  <link rel="stylesheet" href="css/styles.css" />
 </head>
 <body>
-<nav>
-<div class="logo">NexaBill Data Hub</div>
-<ul>
-<li><a href="index.html">Add Product</a></li>
-<li><a href="products.html">View Products</a></li>
-</ul>
-</nav>
+  <nav>
+    <div class="logo">NexaBill Data Hub</div>
+    <ul>
+      <li><a href="index.html">Add Product</a></li>
+      <li><a href="products.html">View Products</a></li>
+    </ul>
+  </nav>
 
+  <main class="product-list-container">
+    <h1>All Products</h1>
+    <div id="productList" class="product-list"></div>
+  </main>
 
-<main class="product-list-container">
-<h1>All Products</h1>
-<div id="productList" class="product-list"></div>
-</main>
+  <!-- VanillaTilt (3D hover) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/vanilla-tilt/1.7.2/vanilla-tilt.min.js" integrity="sha512-S4T2n6aJkqheq1f3kz2fA/3L2mG+8bPZ7bxykE7e8mFfQwJ0P4r6FQ9m0n0u7h7ZpZ2y2i0gqj+gNqf3s8m0mQ==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 
+  <script>
+    const API_BASE = "http://localhost:5001";
+    const listEl = document.getElementById("productList");
+    const known = new Map(); // key -> card element
+    let firstLoadDone = false;
+    let loading = false;
 
-<script>
-    const API_BASE = 'http://localhost:5001';
-    window.onload = async () => {
-      const res = await fetch(`${API_BASE}/api/products`);
-      const products = await res.json();
-      const list = document.getElementById('productList');
-      list.innerHTML = '';
-  
-      products.forEach(product => {
-        const card = document.createElement('div');
-        card.className = 'product-card';
-        card.innerHTML = `
-          <img src="${API_BASE}/${product.image_path}" alt="${product.name}" />
-          <div class="product-info">
-            <h3>${product.name}</h3>
-            <p><strong>Brand:</strong> ${product.brand}</p>
-            <p><strong>MRP:</strong> ₹${product.mrp}</p>
-            <p><strong>Weight:</strong> ${product.weight}</p>
-            <p><strong>Flavor:</strong> ${product.flavor ?? '-'}</p>
-            <p><strong>GST:</strong> ${product.gst}%</p>
-          </div>
-        `;
-        list.appendChild(card);
+    function skeletonCard() {
+      const wrap = document.createElement("div");
+      wrap.className = "product-card skeleton";
+      wrap.innerHTML = `
+        <div class="img"></div>
+        <div class="meta">
+          <div class="line w60"></div>
+          <div class="line w40"></div>
+          <div class="line w50"></div>
+        </div>
+      `;
+      return wrap;
+    }
+
+    function initTilt(el) {
+      if (!window.VanillaTilt || !el) return;
+      VanillaTilt.init(el, {
+        max: 15,
+        speed: 400,
+        glare: true,
+        "max-glare": 0.25,
+        perspective: 900,
+        scale: 1.02,
+        gyroscope: true
       });
     }
+
+    function productCard(p) {
+      const card = document.createElement("div");
+      card.className = "product-card tilt-card"; // enable tilt
+
+      const img = document.createElement("img");
+      img.className = "product-img";
+      img.alt = p.name || "product image";
+      img.loading = "lazy";
+      img.decoding = "async";
+      img.src = `${API_BASE}/${p.image_path}`;
+
+      // Fade in only when loaded (prevents blink)
+      if (img.complete) {
+        img.classList.add("is-loaded");
+      } else {
+        img.addEventListener("load", () => img.classList.add("is-loaded"), { once: true });
+        img.addEventListener("error", () => img.classList.add("is-loaded"), { once: true });
+      }
+
+      const info = document.createElement("div");
+      info.className = "product-info";
+      const price = Number(p.mrp || 0).toFixed(2);
+      info.innerHTML = `
+        <h3>${p.name}</h3>
+        <p><strong>Brand:</strong> ${p.brand ?? "-"}</p>
+        <p><strong>MRP:</strong> ₹${price}</p>
+        <p><strong>Weight:</strong> ${p.weight ?? "-"}</p>
+        ${p.flavor ? `<p><strong>Flavor:</strong> ${p.flavor}</p>` : ""}
+        <p><strong>GST:</strong> ${p.gst ?? 0}%</p>
+      `;
+
+      card.appendChild(img);
+      card.appendChild(info);
+
+      // attach 3D hover
+      initTilt(card);
+
+      return card;
+    }
+
+    async function fetchProducts() {
+      const res = await fetch(`${API_BASE}/api/products`, { cache: "no-store" });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return res.json();
+    }
+
+    async function refreshOnce() {
+      if (loading) return;
+      loading = true;
+
+      try {
+        if (!firstLoadDone && listEl.children.length === 0) {
+          for (let i = 0; i < 3; i++) listEl.appendChild(skeletonCard());
+        }
+
+        const data = await fetchProducts();
+
+        const frag = document.createDocumentFragment();
+        for (const p of data) {
+          const key = p._id || `${p.name}-${p.image_path}`;
+          if (known.has(key)) continue;
+          const card = productCard(p);
+          known.set(key, card);
+          frag.appendChild(card);
+        }
+
+        if (!firstLoadDone && known.size > 0) {
+          [...listEl.querySelectorAll(".skeleton")].forEach((n) => n.remove());
+          firstLoadDone = true;
+        }
+
+        if (frag.childNodes.length) {
+          listEl.appendChild(frag);
+        }
+      } catch (err) {
+        console.error("Failed to load products:", err);
+        if (!firstLoadDone) {
+          [...listEl.querySelectorAll(".skeleton")].forEach((n) => n.remove());
+          const msg = document.createElement("div");
+          msg.style.padding = "12px";
+          msg.style.color = "#b91c1c";
+          msg.textContent = "Could not load products.";
+          listEl.appendChild(msg);
+        }
+      } finally {
+        loading = false;
+      }
+    }
+
+    // Initial load + gentle background refresh
+    refreshOnce();
+    setInterval(refreshOnce, 5000);
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden) refreshOnce();
+    });
   </script>
-  
 </body>
 </html>
+
+
+
+<!-- <!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Product List</title>
+		<link rel="stylesheet" href="css/styles.css" />
+	</head>
+	<body>
+		<nav>
+			<div class="logo">NexaBill Data Hub</div>
+			<ul>
+				<li><a href="index.html">Add Product</a></li>
+				<li><a href="products.html">View Products</a></li>
+			</ul>
+		</nav>
+
+		<main class="product-list-container">
+			<h1>All Products</h1>
+			<div id="productList" class="product-list"></div>
+		</main>
+
+		<script>
+			const API_BASE = "http://localhost:5001";
+			const listEl = document.getElementById("productList");
+			const known = new Map(); // key -> card element
+			let firstLoadDone = false;
+			let loading = false;
+
+			function skeletonCard() {
+				const wrap = document.createElement("div");
+				wrap.className = "product-card skeleton";
+				wrap.innerHTML = `
+        <div class="img"></div>
+        <div class="meta">
+          <div class="line w60"></div>
+          <div class="line w40"></div>
+          <div class="line w50"></div>
+        </div>
+      `;
+				return wrap;
+			}
+
+			function productCard(p) {
+				const card = document.createElement("div");
+				card.className = "product-card";
+
+				const img = document.createElement("img");
+				img.className = "product-img";
+				img.alt = p.name || "product image";
+				img.loading = "lazy";
+				img.decoding = "async";
+				img.src = `${API_BASE}/${p.image_path}`;
+
+				// Fade in only when loaded (prevents blink)
+				if (img.complete) {
+					// cached images load instantly
+					img.classList.add("is-loaded");
+				} else {
+					img.addEventListener("load", () => img.classList.add("is-loaded"), {
+						once: true,
+					});
+					img.addEventListener("error", () => img.classList.add("is-loaded"), {
+						once: true,
+					});
+				}
+
+				const info = document.createElement("div");
+				info.className = "product-info";
+				const price = Number(p.mrp || 0).toFixed(2);
+				info.innerHTML = `
+        <h3>${p.name}</h3>
+        <p><strong>Brand:</strong> ${p.brand ?? "-"}</p>
+        <p><strong>MRP:</strong> ₹${price}</p>
+        <p><strong>Weight:</strong> ${p.weight ?? "-"}</p>
+        ${p.flavor ? `<p><strong>Flavor:</strong> ${p.flavor}</p>` : ""}
+        <p><strong>GST:</strong> ${p.gst ?? 0}%</p>
+      `;
+
+				card.appendChild(img);
+				card.appendChild(info);
+				return card;
+			}
+
+			async function fetchProducts() {
+				const res = await fetch(`${API_BASE}/api/products`, {
+					cache: "no-store",
+				});
+				if (!res.ok) throw new Error(`HTTP ${res.status}`);
+				return res.json();
+			}
+
+			async function refreshOnce() {
+				if (loading) return;
+				loading = true;
+
+				try {
+					// Show skeletons only on very first load
+					if (!firstLoadDone && listEl.children.length === 0) {
+						for (let i = 0; i < 3; i++) listEl.appendChild(skeletonCard());
+					}
+
+					const data = await fetchProducts();
+
+					// Append only new items (no clearing → no flicker)
+					const frag = document.createDocumentFragment();
+					for (const p of data) {
+						const key = p._id || `${p.name}-${p.image_path}`;
+						if (known.has(key)) continue;
+						const card = productCard(p);
+						known.set(key, card);
+						frag.appendChild(card);
+					}
+
+					// Remove skeletons once we have any content
+					if (!firstLoadDone && known.size > 0) {
+						[...listEl.querySelectorAll(".skeleton")].forEach((n) =>
+							n.remove()
+						);
+						firstLoadDone = true;
+					}
+
+					if (frag.childNodes.length) {
+						listEl.appendChild(frag); // use prepend(frag) to show newest on top
+					}
+				} catch (err) {
+					console.error("Failed to load products:", err);
+					// Optional inline non-blocking message:
+					if (!firstLoadDone) {
+						[...listEl.querySelectorAll(".skeleton")].forEach((n) =>
+							n.remove()
+						);
+						const msg = document.createElement("div");
+						msg.style.padding = "12px";
+						msg.style.color = "#b91c1c";
+						msg.textContent = "Could not load products.";
+						listEl.appendChild(msg);
+					}
+				} finally {
+					loading = false;
+				}
+			}
+
+			// Initial load + gentle background refresh
+			refreshOnce();
+			setInterval(refreshOnce, 5000);
+
+			// Refresh once when user returns to the tab
+			document.addEventListener("visibilitychange", () => {
+				if (!document.hidden) refreshOnce();
+			});
+		</script>
+	</body>
+</html>
+> -->
